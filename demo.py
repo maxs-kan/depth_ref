@@ -4,7 +4,7 @@ from PIL import Image
 from depth_refiner import DepthPredictor
 
 pil_img = Image.open('raw_depth0195.png')
-d_predictor = DepthPredictor(gpu_id=0)
+d_predictor = DepthPredictor(gpu_id=1)
 
 e1 = cv2.getTickCount()
 res = d_predictor(pil_img)

@@ -36,7 +36,7 @@ def get_normal(x):
 
 
 class DepthPredictor:
-    def __init__(self, gpu_id=0):
+    def __init__(self, gpu_id=1):
         self.gpu_id = gpu_id
         print("===> Building model")
         self.model = Net_Quarter_Half_Original()

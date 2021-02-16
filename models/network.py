@@ -5,6 +5,63 @@ import math
 from torch.autograd import Variable
 import torch.nn.functional as F
 
+class SurfaceNormals(nn.Module):
+    
+    def __init__(self):
+        super(SurfaceNormals, self).__init__()
+        
+    def forward(self, depth):
+
+        dzdx = -self.gradient_for_normals(depth, axis=2)
+        dzdy = -self.gradient_for_normals(depth, axis=3)
+        norm = torch.cat((dzdx, dzdy, torch.ones_like(depth)), dim=1)
+        return torch.nn.functional.normalize(norm, dim=-3)
+    
+    def gradient_for_normals(self, f, axis=None):
+        N = f.ndim  # number of dimensions
+        dx = 1.0
+    
+        # use central differences on interior and one-sided differences on the
+        # endpoints. This preserves second order-accuracy over the full domain.
+        # create slice objects --- initially all are [:, :, ..., :]
+        slice1 = [slice(None)]*N
+        slice2 = [slice(None)]*N
+        slice3 = [slice(None)]*N
+        slice4 = [slice(None)]*N
+    
+        otype = f.dtype
+        if otype is torch.float32 or torch.float64:
+            pass
+        else:
+            raise TypeError('Input shold be torch.float32')
+    
+        # result allocation
+        out = torch.empty_like(f, dtype=otype)
+    
+        # Numerical differentiation: 2nd order interior
+        slice1[axis] = slice(1, -1)
+        slice2[axis] = slice(None, -2)
+        slice3[axis] = slice(1, -1)
+        slice4[axis] = slice(2, None)
+    
+        out[tuple(slice1)] = (f[tuple(slice4)] - f[tuple(slice2)]) / (2. * dx)
+    
+        # Numerical differentiation: 1st order edges
+        slice1[axis] = 0
+        slice2[axis] = 1
+        slice3[axis] = 0
+        dx_0 = dx 
+        # 1D equivalent -- out[0] = (f[1] - f[0]) / (x[1] - x[0])
+        out[tuple(slice1)] = (f[tuple(slice2)] - f[tuple(slice3)]) / dx_0
+
+        slice1[axis] = -1
+        slice2[axis] = -1
+        slice3[axis] = -2
+        dx_n = dx 
+        # 1D equivalent -- out[-1] = (f[-1] - f[-2]) / (x[-1] - x[-2])
+        out[tuple(slice1)] = (f[tuple(slice2)] - f[tuple(slice3)]) / dx_n
+        return out
+
 def get_upsample_filter(size):
     """Make a 2D bilinear kernel suitable for upsampling"""
     factor = (size + 1) // 2
