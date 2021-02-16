@@ -4,6 +4,7 @@ import numpy as np
 import math
 from torch.autograd import Variable
 import torch.nn.functional as F
+import math
 
 class SurfaceNormals(nn.Module):
     
@@ -12,56 +13,30 @@ class SurfaceNormals(nn.Module):
         
     def forward(self, depth):
 
-        dzdx = -self.gradient_for_normals(depth, axis=2)
-        dzdy = -self.gradient_for_normals(depth, axis=3)
-        norm = torch.cat((dzdx, dzdy, torch.ones_like(depth)), dim=1)
-        return torch.nn.functional.normalize(norm, dim=-3)
+        return self.get_normal(depth)
     
-    def gradient_for_normals(self, f, axis=None):
-        N = f.ndim  # number of dimensions
-        dx = 1.0
-    
-        # use central differences on interior and one-sided differences on the
-        # endpoints. This preserves second order-accuracy over the full domain.
-        # create slice objects --- initially all are [:, :, ..., :]
-        slice1 = [slice(None)]*N
-        slice2 = [slice(None)]*N
-        slice3 = [slice(None)]*N
-        slice4 = [slice(None)]*N
-    
-        otype = f.dtype
-        if otype is torch.float32 or torch.float64:
-            pass
-        else:
-            raise TypeError('Input shold be torch.float32')
-    
-        # result allocation
-        out = torch.empty_like(f, dtype=otype)
-    
-        # Numerical differentiation: 2nd order interior
-        slice1[axis] = slice(1, -1)
-        slice2[axis] = slice(None, -2)
-        slice3[axis] = slice(1, -1)
-        slice4[axis] = slice(2, None)
-    
-        out[tuple(slice1)] = (f[tuple(slice4)] - f[tuple(slice2)]) / (2. * dx)
-    
-        # Numerical differentiation: 1st order edges
-        slice1[axis] = 0
-        slice2[axis] = 1
-        slice3[axis] = 0
-        dx_0 = dx 
-        # 1D equivalent -- out[0] = (f[1] - f[0]) / (x[1] - x[0])
-        out[tuple(slice1)] = (f[tuple(slice2)] - f[tuple(slice3)]) / dx_0
+    def generate_grid(self, h, w, fov):
+        x = (torch.arange(1, w + 1) - (w + 1) / 2) / (w / 2) * math.tan(fov / 2 / 180 * math.pi)
+        y = -(torch.arange(1, h + 1) - (h + 1) / 2) / (h / 2) * math.tan(fov / 2 / 180 * math.pi) * (h / w)
+        grid = torch.stack([x.repeat(h, 1), y.repeat(w, 1).t(), torch.ones(h, w, dtype=torch.int64)], 0)
+        return grid.type(torch.FloatTensor)
 
-        slice1[axis] = -1
-        slice2[axis] = -1
-        slice3[axis] = -2
-        dx_n = dx 
-        # 1D equivalent -- out[-1] = (f[-1] - f[-2]) / (x[-1] - x[-2])
-        out[tuple(slice1)] = (f[tuple(slice2)] - f[tuple(slice3)]) / dx_n
-        return out
 
+    def get_normal(self, x):
+        [b, c, h, w] = x.size()
+        grid = self.generate_grid(482, 642, 60)
+        ph = (482 - h) // 2
+        pw = (642 - w) // 2
+        grid = grid.narrow(1, ph + 1, h).narrow(2, pw + 1, w)
+        padding = torch.nn.ReflectionPad2d((1, 1, 1, 1))
+        v = x.repeat(1, 3, 1, 1)
+        pv = padding(v * grid)
+        gx = pv.narrow(3, 0, w).narrow(2, 0, h) / 2 - pv.narrow(3, 2, w).narrow(2, 0, h) / 2
+        gy = pv.narrow(2, 2, h).narrow(3, 0, w) / 2 - pv.narrow(2, 0, h).narrow(3, 0, w) / 2
+        crs = gx.cross(gy, 1)
+        norm = crs.norm(2, 1, keepdim=True).repeat(1, 3, 1, 1)
+        n = -crs / (norm.clamp(min=1e-8))
+        return n
 def get_upsample_filter(size):
     """Make a 2D bilinear kernel suitable for upsampling"""
     factor = (size + 1) // 2

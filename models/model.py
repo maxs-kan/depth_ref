@@ -46,7 +46,6 @@ class Model(BaseModel, nn.Module):
         
         if self.opt.use_full:
             self.depth_B = self.depth_B.to(self.device, non_blocking=torch.cuda.is_available())
-            self.norm_A = self.surf_normals(self.depth_A)
             self.norm_B = self.surf_normals(self.depth_B)
         
         if self.opt.use_half:
@@ -59,7 +58,6 @@ class Model(BaseModel, nn.Module):
         ###Fake depth
         self.depth_A2B, self.d_2, self.d_4 = self.netG_A((self.depth_A, self.depth_A_4))
         ###Normals
-        self.norm_A2B = self.surf_normals(self.depth_A2B)
 
     def backward_G(self):
         
@@ -100,7 +98,7 @@ class Model(BaseModel, nn.Module):
             L_n_2 = self.criterionL1(self.surf_normals(self.d_2), self.norm_B_2)
             self.loss_Ln += L_n_2
         if self.opt.use_full:
-            L_n = self.criterionL1(self.norm_A2B, self.norm_B)
+            L_n = self.criterionL1(self.surf_normals(self.depth_A2B), self.norm_B)
             self.loss_Ln += L_n
             
         self.loss = self.loss_Ld + 2. * self.loss_Lg + 2. * self.loss_Ln + 10. * self.loss_Lb
